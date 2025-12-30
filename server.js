@@ -6,6 +6,19 @@ import { createServer as createViteServer } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Helper function to escape HTML
+function escapeHtml(text) {
+  if (!text) return "";
+  const map = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
 async function createServer() {
   const app = express();
 
@@ -48,10 +61,110 @@ async function createServer() {
       // 4. render the app HTML. This assumes entry-server.js's exported
       //     `render` function calls appropriate framework SSR APIs,
       //    e.g. ReactDOMServer.renderToString()
-      const appHtml = await render(url);
+      const { appHtml, metadata } = await render(url);
 
-      // 5. Inject the app-rendered HTML into the template.
-      const html = template.replace(`<!--ssr-outlet-->`, () => appHtml);
+      // 5. Inject metadata into the template
+      const baseUrl = `${req.protocol}://${req.get("host")}${url}`;
+      const fullOgUrl = metadata.ogUrl || baseUrl;
+
+      // Replace title tag
+      const titleTag = metadata.title
+        ? `<title>${escapeHtml(metadata.title)}</title>`
+        : `<title>Vite + React</title>`;
+      template = template.replace(`<title>Vite + React</title>`, titleTag);
+
+      // Build meta tags HTML (excluding title, which we already replaced)
+      const metaTags = [];
+
+      if (metadata.description) {
+        metaTags.push(
+          `    <meta name="description" content="${escapeHtml(
+            metadata.description
+          )}" />`
+        );
+      }
+
+      if (metadata.keywords) {
+        metaTags.push(
+          `    <meta name="keywords" content="${escapeHtml(
+            metadata.keywords
+          )}" />`
+        );
+      }
+
+      // Open Graph tags
+      if (metadata.ogTitle) {
+        metaTags.push(
+          `    <meta property="og:title" content="${escapeHtml(
+            metadata.ogTitle
+          )}" />`
+        );
+      }
+      if (metadata.ogDescription) {
+        metaTags.push(
+          `    <meta property="og:description" content="${escapeHtml(
+            metadata.ogDescription
+          )}" />`
+        );
+      }
+      if (metadata.ogImage) {
+        metaTags.push(
+          `    <meta property="og:image" content="${escapeHtml(
+            metadata.ogImage
+          )}" />`
+        );
+      }
+      if (fullOgUrl) {
+        metaTags.push(
+          `    <meta property="og:url" content="${escapeHtml(fullOgUrl)}" />`
+        );
+      }
+      if (metadata.ogType) {
+        metaTags.push(
+          `    <meta property="og:type" content="${escapeHtml(
+            metadata.ogType
+          )}" />`
+        );
+      }
+
+      // Twitter Card tags
+      if (metadata.twitterCard) {
+        metaTags.push(
+          `    <meta name="twitter:card" content="${escapeHtml(
+            metadata.twitterCard
+          )}" />`
+        );
+      }
+      if (metadata.twitterTitle) {
+        metaTags.push(
+          `    <meta name="twitter:title" content="${escapeHtml(
+            metadata.twitterTitle
+          )}" />`
+        );
+      }
+      if (metadata.twitterDescription) {
+        metaTags.push(
+          `    <meta name="twitter:description" content="${escapeHtml(
+            metadata.twitterDescription
+          )}" />`
+        );
+      }
+      if (metadata.twitterImage) {
+        metaTags.push(
+          `    <meta name="twitter:image" content="${escapeHtml(
+            metadata.twitterImage
+          )}" />`
+        );
+      }
+
+      // Inject meta tags after the title tag
+      if (metaTags.length > 0) {
+        const metaTagsHtml = metaTags.join("\n") + "\n";
+        template = template.replace(titleTag, titleTag + "\n" + metaTagsHtml);
+      }
+
+      // 6. Inject app HTML into body
+      const html = template.replace(`<!--ssr-outlet-->`, appHtml);
 
       // 6. Send the rendered HTML back.
       res.status(200).set({ "Content-Type": "text/html" }).end(html);
